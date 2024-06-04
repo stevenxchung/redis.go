@@ -19,7 +19,8 @@ func LoadConfig() (*Config, error) {
 
 	port := os.Getenv("REDIS_GO_PORT")
 	if port == "" {
-		port = "3000" // default port if environment variable is not set
+		// Default port if environment variable is not set
+		port = "3000"
 	}
 	return &Config{
 		Port: port,
