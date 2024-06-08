@@ -24,7 +24,7 @@ Get the value of key. If the key does not exist or has expired, the service will
 
 ```graphql
 query {
-    get(key: "test")
+  get(key: "test")
 }
 ```
 
@@ -34,7 +34,7 @@ Sets the value of a key. Expiration time is an optional parameter.
 
 ```graphql
 mutation {
-    set(key: "test", value: "Over 9000!", expires: 3)
+  set(key: "test", value: "Over 9000!", expires: 3)
 }
 ```
 
@@ -44,6 +44,6 @@ Removes the specified key(s). A key is ignored if it does not exist.
 
 ```graphql
 mutation {
-    del(key: "test")
+  del(keys: ["test"])
 }
 ```

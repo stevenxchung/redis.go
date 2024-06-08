@@ -1,10 +1,10 @@
 package config
 
 import (
-	"log"
 	"os"
 
 	"github.com/joho/godotenv"
+	"github.com/stevenxchung/redis.go/pkg/util"
 )
 
 type Config struct {
@@ -14,7 +14,7 @@ type Config struct {
 func LoadConfig() (*Config, error) {
 	// Load environment variables from .env file
 	if err := godotenv.Load(); err != nil {
-		log.Fatalf("Error loading .env file: %v", err)
+		util.LogInfo("Environment file `.env` not found. Setting defaults...")
 	}
 
 	port := os.Getenv("REDIS_GO_PORT")

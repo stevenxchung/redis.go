@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -77,7 +78,8 @@ func (qh *QueryHandler) getQueryField() *graphql.Field {
 			}
 
 			if vwe.Expires != nil && time.Now().After(*vwe.Expires) {
-				delete(qh.inMemoryDB, key) // Remove expired value
+				// Remove expired value
+				delete(qh.inMemoryDB, key)
 				return "data has expired", nil
 			}
 
@@ -117,7 +119,7 @@ func (qh *QueryHandler) setMutationField() *graphql.Field {
 				Expires: ttl,
 			}
 
-			return value, nil
+			return fmt.Sprintf("{'%s': '%s'}", key, value), nil
 		},
 	}
 }
@@ -125,16 +127,25 @@ func (qh *QueryHandler) setMutationField() *graphql.Field {
 func (qh *QueryHandler) delMutationField() *graphql.Field {
 	return &graphql.Field{
 		Type:        graphql.String,
-		Description: "Delete a key-value pair for a given key",
+		Description: "Delete a key-value pair for given key(s)",
 		Args: graphql.FieldConfigArgument{
-			"key": &graphql.ArgumentConfig{
-				Type: graphql.NewNonNull(graphql.String),
+			"keys": &graphql.ArgumentConfig{
+				Type: graphql.NewNonNull(graphql.NewList(graphql.String)),
 			},
 		},
 		Resolve: func(params graphql.ResolveParams) (interface{}, error) {
-			key := params.Args["key"].(string)
-			delete(qh.inMemoryDB, key)
-			return key, nil
+			keys := params.Args["keys"].([]interface{})
+			deletedKeys := []string{}
+
+			for _, key := range keys {
+				key := key.(string)
+				if _, found := qh.inMemoryDB[key]; found {
+					delete(qh.inMemoryDB, key)
+					deletedKeys = append(deletedKeys, key)
+				}
+			}
+
+			return deletedKeys, nil
 		},
 	}
 }
