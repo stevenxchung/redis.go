@@ -8,21 +8,21 @@ import (
 )
 
 type Config struct {
-	Port string
+	ServerPort string
 }
 
 func LoadConfig() (*Config, error) {
-	// Load environment variables from .env file
 	if err := godotenv.Load(); err != nil {
 		util.LogInfo("Environment file `.env` not found. Setting defaults...")
 	}
 
-	port := os.Getenv("REDIS_GO_PORT")
+	port := os.Getenv("REDIS_GO_SERVER_PORT")
 	if port == "" {
-		// Default port if environment variable is not set
-		port = "3000"
+		// Default server port if environment variable is not set
+		port = "6379"
 	}
+
 	return &Config{
-		Port: port,
+		ServerPort: port,
 	}, nil
 }

@@ -1,13 +1,13 @@
 package server
 
 import (
-	"fmt"
-	"net/http"
+	"bufio"
+	"net"
+	"strconv"
+	"strings"
 	"time"
 
-	"github.com/graphql-go/graphql"
-	"github.com/graphql-go/handler"
-	"github.com/stevenxchung/redis.go/pkg/util"
+	"github.com/stevenxchung/redis.go/internal/protocol"
 )
 
 type ValueWithExpiration struct {
@@ -25,127 +25,111 @@ func NewQueryHandler() *QueryHandler {
 	}
 }
 
-func (qh *QueryHandler) graphQLHandler(w http.ResponseWriter, r *http.Request) {
-	schema, err := graphql.NewSchema(graphql.SchemaConfig{
-		Query:    qh.defineQuery(),
-		Mutation: qh.defineMutation(),
-	})
-	if err != nil {
-		util.LogError("Failed to create schema", err)
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-		return
-	}
+func (qh *QueryHandler) queryHandler(conn net.Conn) {
+	defer conn.Close()
+	reader := bufio.NewReader(conn)
+	writer := bufio.NewWriter(conn)
 
-	h := handler.New(&handler.Config{
-		Schema: &schema,
-		Pretty: true,
-	})
+	for {
+		// Parses a command from the reader
+		command, err := reader.ReadString('\n')
+		if err != nil {
+			conn.Write([]byte(protocol.EncodeError("failed to parse command")))
+			return
+		}
+		command = strings.TrimSpace(command)
 
-	h.ServeHTTP(w, r)
-}
+		// Process command
+		response := qh.processCommand(command)
 
-func (qh *QueryHandler) defineQuery() *graphql.Object {
-	return graphql.NewObject(graphql.ObjectConfig{
-		Name:   "Query",
-		Fields: graphql.Fields{"get": qh.getQueryField()},
-	})
-}
-
-func (qh *QueryHandler) defineMutation() *graphql.Object {
-	return graphql.NewObject(graphql.ObjectConfig{
-		Name: "Mutation",
-		Fields: graphql.Fields{
-			"set": qh.setMutationField(),
-			"del": qh.delMutationField(),
-		},
-	})
-}
-
-func (qh *QueryHandler) getQueryField() *graphql.Field {
-	return &graphql.Field{
-		Type:        graphql.String,
-		Description: "Get the value for a given key",
-		Args: graphql.FieldConfigArgument{
-			"key": &graphql.ArgumentConfig{
-				Type: graphql.NewNonNull(graphql.String),
-			},
-		},
-		Resolve: func(params graphql.ResolveParams) (interface{}, error) {
-			key := params.Args["key"].(string)
-			vwe, found := qh.inMemoryDB[key]
-			if !found {
-				return "data not found", nil
-			}
-
-			if vwe.Expires != nil && time.Now().After(*vwe.Expires) {
-				// Remove expired value
-				delete(qh.inMemoryDB, key)
-				return "data has expired", nil
-			}
-
-			return vwe.Value, nil
-		},
+		// Send response back to client
+		_, err = writer.WriteString(response + "\n")
+		if err != nil {
+			conn.Write([]byte(protocol.EncodeError("failed to write response")))
+			return
+		}
+		writer.Flush()
 	}
 }
 
-func (qh *QueryHandler) setMutationField() *graphql.Field {
-	return &graphql.Field{
-		Type:        graphql.String,
-		Description: "Set the value for a given key, with an optional expiration time",
-		Args: graphql.FieldConfigArgument{
-			"key": &graphql.ArgumentConfig{
-				Type: graphql.NewNonNull(graphql.String),
-			},
-			"value": &graphql.ArgumentConfig{
-				Type: graphql.NewNonNull(graphql.String),
-			},
-			"expires": &graphql.ArgumentConfig{
-				Type: graphql.Int,
-			},
-		},
-		Resolve: func(params graphql.ResolveParams) (interface{}, error) {
-			key := params.Args["key"].(string)
-			value := params.Args["value"].(string)
-			var ttl *time.Time
+func (qh *QueryHandler) processCommand(command string) string {
+	input := strings.Fields(command)
+	if len(input) == 0 {
+		return protocol.EncodeError("empty command")
+	}
 
-			if params.Args["expires"] != nil {
-				expSeconds := params.Args["expires"].(int)
-				expTime := time.Now().Add(time.Duration(expSeconds) * time.Second)
-				ttl = &expTime
-			}
-
-			qh.inMemoryDB[key] = ValueWithExpiration{
-				Value:   value,
-				Expires: ttl,
-			}
-
-			return fmt.Sprintf("{'%s': '%s'}", key, value), nil
-		},
+	// Convert input command to upper case before checking
+	switch strings.ToUpper(input[0]) {
+	case "GET":
+		return qh.get(input)
+	case "SET":
+		return qh.set(input)
+	case "DEL":
+		return qh.del(input)
+	default:
+		return protocol.EncodeError("unknown command: " + input[0])
 	}
 }
 
-func (qh *QueryHandler) delMutationField() *graphql.Field {
-	return &graphql.Field{
-		Type:        graphql.String,
-		Description: "Delete a key-value pair for given key(s)",
-		Args: graphql.FieldConfigArgument{
-			"keys": &graphql.ArgumentConfig{
-				Type: graphql.NewNonNull(graphql.NewList(graphql.String)),
-			},
-		},
-		Resolve: func(params graphql.ResolveParams) (interface{}, error) {
-			keys := params.Args["keys"].([]interface{})
-			deletedKeys := []string{}
-
-			for _, key := range keys {
-				key := key.(string)
-				if _, found := qh.inMemoryDB[key]; found {
-					delete(qh.inMemoryDB, key)
-					deletedKeys = append(deletedKeys, key)
-				}
-			}
-
-			return deletedKeys, nil
-		},
+func (qh *QueryHandler) get(input []string) string {
+	if len(input) != 2 {
+		return protocol.EncodeError("wrong number of arguments for GET command")
 	}
+
+	key := input[1]
+	object, found := qh.inMemoryDB[key]
+	if !found {
+		// Not found
+		return protocol.NotFound()
+	}
+
+	if object.Expires != nil && time.Now().After(*object.Expires) {
+		delete(qh.inMemoryDB, key)
+		// Expired
+		return protocol.NotFound()
+	}
+
+	return protocol.EncodeValue(object.Value)
+}
+
+func (qh *QueryHandler) set(input []string) string {
+	if len(input) < 3 || (len(input) == 5 && strings.ToUpper(input[3]) != "EX") {
+		return protocol.EncodeError("wrong number of arguments for SET command")
+	}
+
+	key := input[1]
+	value := input[2]
+	var ttl *time.Time
+	if len(input) == 5 {
+		expSeconds, err := strconv.Atoi(input[4])
+		if err != nil {
+			return protocol.EncodeError("invalid expire time in SET command")
+		}
+		expTime := time.Now().Add(time.Duration(expSeconds) * time.Second)
+		ttl = &expTime
+	}
+
+	qh.inMemoryDB[key] = ValueWithExpiration{
+		Value:   value,
+		Expires: ttl,
+	}
+
+	return protocol.OK()
+}
+
+func (qh *QueryHandler) del(input []string) string {
+	if len(input) < 2 {
+		return protocol.EncodeError("wrong number of arguments for DEL command")
+	}
+
+	keys := input[1:]
+	deletedCount := 0
+	for _, key := range keys {
+		if _, found := qh.inMemoryDB[key]; found {
+			delete(qh.inMemoryDB, key)
+			deletedCount++
+		}
+	}
+
+	return protocol.EncodeInteger(deletedCount)
 }

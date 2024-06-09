@@ -1,8 +1,9 @@
 package main
 
 import (
-	"fmt"
+	"time"
 
+	"github.com/stevenxchung/redis.go/external/client"
 	"github.com/stevenxchung/redis.go/internal/config"
 	"github.com/stevenxchung/redis.go/internal/server"
 	"github.com/stevenxchung/redis.go/pkg/util"
@@ -14,9 +15,7 @@ func main() {
 		util.LogError("Error loading configuration", err)
 	}
 
-	fmt.Println("Starting Redis Go...")
-	s := server.NewServer(cfg)
-	if err := s.Start(); err != nil {
-		util.LogError("Failed to start server", err)
-	}
+	go server.StartServer(cfg)
+	time.Sleep(1 * time.Second)
+	client.StartClient(cfg)
 }
