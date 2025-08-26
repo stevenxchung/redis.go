@@ -93,27 +93,97 @@ func (qh *QueryHandler) get(input []string) string {
 }
 
 func (qh *QueryHandler) set(input []string) string {
-	if len(input) < 3 || (len(input) == 5 && strings.ToUpper(input[3]) != "EX") {
+	if len(input) < 3 {
 		return protocol.EncodeError("wrong number of arguments for SET command")
 	}
 
 	key := input[1]
 	value := input[2]
-	var ttl *time.Time
-	if len(input) == 5 {
-		expSeconds, err := strconv.Atoi(input[4])
-		if err != nil {
-			return protocol.EncodeError("invalid expire time in SET command")
+
+	var (
+		nx, xx       bool
+		getLastValue bool
+		ttl          *time.Time
+	)
+
+	i := 3
+	for i < len(input) {
+		arg := strings.ToUpper(input[i])
+		switch arg {
+		case "NX":
+			// Set only if key does not exist
+			nx = true
+			i++
+		case "XX":
+			// Set only if key already exists
+			xx = true
+			i++
+		case "GET":
+			// Retrieve last value before update
+			getLastValue = true
+			i++
+		case "EX":
+			if i+1 >= len(input) {
+				return protocol.EncodeError("syntax error: EX requires seconds")
+			}
+			seconds, err := strconv.Atoi(input[i+1])
+			if err != nil || seconds <= 0 {
+				return protocol.EncodeError("invalid expire time in SET command")
+			}
+			t := time.Now().Add(time.Duration(seconds) * time.Second)
+			ttl = &t
+			i += 2
+		default:
+			return protocol.EncodeError("syntax error near: " + arg)
 		}
-		expTime := time.Now().Add(time.Duration(expSeconds) * time.Second)
-		ttl = &expTime
 	}
 
+	// Check if key found and not expired
+	object, found := qh.inMemoryDB[key]
+	if found && object.Expires != nil && time.Now().After(*object.Expires) {
+		// Expired, treat as non-existent
+		delete(qh.inMemoryDB, key)
+		found = false
+	}
+
+	// NX/XX logic
+	if nx && found {
+		if getLastValue {
+			if found {
+				return protocol.EncodeValue(object.Value)
+			} else {
+				return protocol.NotFound()
+			}
+		}
+		return protocol.NotFound()
+	}
+	if xx && !found {
+		if getLastValue {
+			return protocol.NotFound()
+		}
+		return protocol.NotFound()
+	}
+
+	// Store old value before overwrite
+	var oldValue string
+	var hadOld bool
+	if getLastValue && found {
+		oldValue = object.Value
+		hadOld = true
+	}
+
+	// Set new value
 	qh.inMemoryDB[key] = ValueWithExpiration{
 		Value:   value,
 		Expires: ttl,
 	}
 
+	if getLastValue {
+		if hadOld {
+			return protocol.EncodeValue(oldValue)
+		}
+		return protocol.NotFound()
+	}
 	return protocol.OK()
 }
 
