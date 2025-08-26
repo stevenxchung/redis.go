@@ -138,6 +138,10 @@ func (qh *QueryHandler) set(input []string) string {
 		}
 	}
 
+	if nx && xx {
+		return protocol.EncodeError("syntax error: NX and XX options at the same time are not compatible")
+	}
+
 	// Check if key found and not expired
 	object, found := qh.inMemoryDB[key]
 	if found && object.Expires != nil && time.Now().After(*object.Expires) {
@@ -157,6 +161,7 @@ func (qh *QueryHandler) set(input []string) string {
 		}
 		return protocol.NotFound()
 	}
+
 	if xx && !found {
 		if getLastValue {
 			return protocol.NotFound()
