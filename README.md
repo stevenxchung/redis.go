@@ -1,6 +1,6 @@
 # redis.go
 
-[Redis](https://redis.io/) is a well-known in-memory database that persists data on disk and operates on a key-value data model. To better understand its internals, we can explore building a similar solution from scratch. This repository provides such an implementation, incorporating some variations. 
+[Redis](https://redis.io/) is a well-known in-memory database that persists data on disk and operates on a key-value data model. To better understand its internals, we can explore building a similar solution from scratch. This repository provides such an implementation, incorporating some variations.
 
 We will start with a simple [Redis-based interface](https://redis.io/docs/latest/develop/reference/protocol-spec/) where users can make simple queries to this redis.go database via a built-in redis.go client and go from there.
 
@@ -34,6 +34,12 @@ Set key to hold the string value. If key already holds a value, it is overwritte
 ```bash
 SET key value [NX | XX] [GET] [EX seconds]
 ```
+
+Where:
+
+- `NX`: set only if key does **NOT** exist
+- `XX`: set only if key **ALREADY** exists
+- `GET`: retrieve last value before update
 
 ### DEL
 
