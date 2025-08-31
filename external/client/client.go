@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/stevenxchung/redis.go/internal/config"
+	"github.com/stevenxchung/redis.go/internal/protocol"
 	"github.com/stevenxchung/redis.go/pkg/util"
 )
 
@@ -21,27 +22,37 @@ func StartClient(cfg *config.Config) {
 
 	util.LogInfo("Connecting to redis.go server...")
 	reader := bufio.NewReader(os.Stdin)
+	serverReader := bufio.NewReader(conn)
+
 	for {
 		fmt.Print("redis.go> ")
-		command, err := reader.ReadString('\n')
+		line, err := reader.ReadString('\n')
 		if err != nil {
 			util.LogInfo(fmt.Sprintf("Error reading command: %s", err))
 			continue
 		}
-		command = strings.TrimSpace(command)
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
 
-		if command == "quit" || command == "exit" {
-			fmt.Print("Goodbye!")
+		if strings.EqualFold(line, "quit") || strings.EqualFold(line, "exit") {
+			fmt.Println("Goodbye!")
 			break
 		}
 
-		_, err = fmt.Fprintf(conn, "%s\n", command)
+		// Encode to RESP Array
+		args := strings.Fields(line)
+		resp := protocol.EncodeRESPArray(args)
+
+		_, err = fmt.Fprint(conn, resp)
 		if err != nil {
 			util.LogInfo(fmt.Sprintf("Error sending command: %s", err))
 			continue
 		}
 
-		response, err := bufio.NewReader(conn).ReadString('\n')
+		// Parse full RESP reply
+		response, err := protocol.ReadRESP(serverReader)
 		if err != nil {
 			util.LogInfo(fmt.Sprintf("Error reading response: %s", err))
 			continue

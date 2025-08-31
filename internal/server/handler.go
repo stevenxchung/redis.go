@@ -26,23 +26,13 @@ func (qh *QueryHandler) queryHandler(conn net.Conn) {
 	writer := bufio.NewWriter(conn)
 
 	for {
-		// Parses a command from the reader
-		command, err := reader.ReadString('\n')
+		parts, err := protocol.ReadRESPArray(reader)
 		if err != nil {
-			conn.Write([]byte(protocol.EncodeError("failed to parse command")))
 			return
 		}
-		command = strings.TrimSpace(command)
 
-		// Process command
-		response := qh.processCommand(command)
-
-		// Send response back to client
-		_, err = writer.WriteString(response + "\n")
-		if err != nil {
-			conn.Write([]byte(protocol.EncodeError("failed to write response")))
-			return
-		}
+		response := qh.processCommand(strings.Join(parts, " "))
+		writer.WriteString(response)
 		writer.Flush()
 	}
 }
