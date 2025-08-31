@@ -48,3 +48,16 @@ Removes the specified keys. A key is ignored if it does not exist.
 ```bash
 DEL key [key ...]
 ```
+
+## Testing
+
+```
+# Run all tests in all subpackages and create a coverage profile
+go test ./... -coverprofile=coverage.out
+
+# View a simple coverage summary in the terminal
+go tool cover -func=coverage.out
+
+# Open an HTML coverage report in your browser
+go tool cover -html=coverage.out
+```
