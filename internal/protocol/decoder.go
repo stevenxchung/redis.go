@@ -46,7 +46,7 @@ func ReadRESP(r *bufio.Reader) (string, error) {
 			return "", err
 		}
 
-		return string(buf[:length]) + "\n", nil
+		return string(buf[:length+2]), nil
 
 	default:
 		return "", fmt.Errorf("unknown RESP prefix: %c", prefix)

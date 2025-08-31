@@ -96,6 +96,14 @@ func TestProcessCommand_SetWithExpiry(t *testing.T) {
 
 // ----- E2E Tests -----
 
+func assertRESP(t *testing.T, send func(...string) string, args []string, want string) {
+	t.Helper()
+	got := send(args...)
+	if got != want {
+		t.Fatalf("expected %q, got %q", want, got)
+	}
+}
+
 func TestQueryHandler_TCPFlow(t *testing.T) {
 	serverConn, clientConn := net.Pipe()
 	qh := NewQueryHandler()
@@ -114,20 +122,9 @@ func TestQueryHandler_TCPFlow(t *testing.T) {
 		return resp
 	}
 
-	// SET should decode to "+OK\r\n"
-	if got := sendRESP("SET", "foo", "bar"); got != "+OK\r\n" {
-		t.Fatalf("expected %q, got %q", "+OK\r\n", got)
-	}
-
-	// GET should decode to "bar\n"
-	if got := sendRESP("GET", "foo"); got != "bar\n" {
-		t.Fatalf("expected %q, got %q", "bar\n", got)
-	}
-
-	// DEL should decode to ":1\r\n"
-	if got := sendRESP("DEL", "foo"); got != ":1\r\n" {
-		t.Fatalf("expected %q, got %q", ":1\r\n", got)
-	}
+	assertRESP(t, sendRESP, []string{"SET", "foo", "bar"}, protocol.OK())
+	assertRESP(t, sendRESP, []string{"GET", "foo"}, "bar\r\n")
+	assertRESP(t, sendRESP, []string{"DEL", "foo"}, protocol.EncodeInteger(1))
 
 	clientConn.Close()
 }
