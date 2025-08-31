@@ -24,7 +24,7 @@ func Set(db map[string]model.ValueWithExpiration, input []string) string {
 
 	opts, errMsg := parseSetOptions(input[3:])
 	if errMsg != "" {
-		return protocol.EncodeError(errMsg)
+		return errMsg
 	}
 
 	if opts.NX && opts.XX {
